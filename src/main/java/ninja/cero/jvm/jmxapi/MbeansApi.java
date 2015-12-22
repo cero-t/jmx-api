@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.management.*;
+import javax.management.openmbean.CompositeData;
 import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
@@ -32,22 +33,48 @@ public class MbeansApi {
     }
 
     @RequestMapping("/mbeans/{pid}/{name:.+}")
-    public MBeanInfo mbeansInfo(@PathVariable String pid, @PathVariable String name) throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
-        System.out.println(pid);
-        System.out.println(name);
+    public MBeanInfo mbeansInfo(@PathVariable String pid, @PathVariable String name)
+            throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
         JMXConnector connector = getJmxConnector(pid);
 
         try {
             MBeanServerConnection connection = connector.getMBeanServerConnection();
-
-            ObjectName o = new ObjectName(name);
-            return connection.getMBeanInfo(o);
+            return connection.getMBeanInfo(new ObjectName(name));
         } finally {
             connector.close();
         }
     }
 
-    private static JMXConnector getJmxConnector(String pid) throws AttachNotSupportedException, IOException, AgentLoadException, AgentInitializationException {
+    @RequestMapping("/mbeans/{pid}/{name:.+}/{attributes}")
+    public Map<String, Object> mbeansAttribute(@PathVariable String pid, @PathVariable String name, @PathVariable String[] attributes)
+            throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
+        Map<String, Object> map = new LinkedHashMap<String, Object>();
+        JMXConnector connector = getJmxConnector(pid);
+
+        try {
+            MBeanServerConnection connection = connector.getMBeanServerConnection();
+            for (Object o : connection.getAttributes(new ObjectName(name), attributes)) {
+                if (Attribute.class.isAssignableFrom(o.getClass())) {
+                    Attribute attribute = (Attribute) o;
+                    Object value = attribute.getValue();
+
+                    if (CompositeData.class.isAssignableFrom(value.getClass())) {
+                        map.put(attribute.getName(), toMap((CompositeData) value));
+                    } else if (CompositeData[].class.isAssignableFrom(value.getClass())) {
+                        map.put(attribute.getName(), toList((CompositeData[]) value));
+                    } else {
+                        map.put(attribute.getName(), value);
+                    }
+                }
+            }
+        } finally {
+            connector.close();
+        }
+
+        return map;
+    }
+
+    protected JMXConnector getJmxConnector(String pid) throws AttachNotSupportedException, IOException, AgentLoadException, AgentInitializationException {
         VirtualMachine vm = VirtualMachine.attach(pid);
         String connectorAddress;
         try {
@@ -64,5 +91,30 @@ public class MbeansApi {
 
         JMXServiceURL serviceURL = new JMXServiceURL(connectorAddress);
         return JMXConnectorFactory.connect(serviceURL);
+    }
+
+    protected Map<String, Object> toMap(CompositeData compositeData) {
+        Map<String, Object> map = new LinkedHashMap<String, Object>();
+
+        for (String key : compositeData.getCompositeType().keySet()) {
+            Object value = compositeData.get(key);
+            if (CompositeData.class.isAssignableFrom(value.getClass())) {
+                value = toMap((CompositeData) value);
+            }
+
+            map.put(key, value);
+        }
+
+        return map;
+    }
+
+    protected List<Map<String, Object>> toList(CompositeData[] compositeData) {
+        List<Map<String, Object>> list = new ArrayList<Map<String, Object>>(compositeData.length);
+
+        for (CompositeData c : compositeData) {
+            list.add(toMap(c));
+        }
+
+        return list;
     }
 }
