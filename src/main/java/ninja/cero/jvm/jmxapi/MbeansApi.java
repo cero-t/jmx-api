@@ -6,6 +6,7 @@ import com.sun.tools.attach.AttachNotSupportedException;
 import com.sun.tools.attach.VirtualMachine;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.management.*;
@@ -45,7 +46,7 @@ public class MbeansApi {
         }
     }
 
-    @RequestMapping("/mbeans/{pid}/{name:.+}/{attributes}")
+    @RequestMapping("/mbeans/{pid}/{name:.+}/attribute/{attributes}")
     public Map<String, Object> mbeansAttribute(@PathVariable String pid, @PathVariable String name, @PathVariable String[] attributes)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
         Map<String, Object> map = new LinkedHashMap<String, Object>();
@@ -74,6 +75,37 @@ public class MbeansApi {
         return map;
     }
 
+
+    @RequestMapping("/mbeans/{pid}/{name:.+}/operation/{operation}")
+    public Object mbeansInvoke(@PathVariable String pid, @PathVariable String name, @PathVariable String operation, @RequestParam Map<String, String> params)
+            throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException, MBeanException {
+        JMXConnector connector = getJmxConnector(pid);
+
+        try {
+            MBeanServerConnection connection = connector.getMBeanServerConnection();
+
+            ObjectName objectName = new ObjectName(name);
+            MBeanInfo mBeanInfo = connection.getMBeanInfo(objectName);
+            Collection<String> values = params.values();
+            Map<Object, String> map = toArgs(operation, values.toArray(new String[values.size()]), mBeanInfo);
+
+            Set<Object> args = map.keySet();
+            Collection<String> signatures = map.values();
+
+            Object result = connection.invoke(objectName, operation, args.toArray(new Object[args.size()]), signatures.toArray(new String[signatures.size()]));
+            if (CompositeData.class.isAssignableFrom(result.getClass())) {
+                return toMap((CompositeData) result);
+            } else if (CompositeData[].class.isAssignableFrom(result.getClass())) {
+                return toList((CompositeData[]) result);
+            } else {
+                return result;
+            }
+
+        } finally {
+            connector.close();
+        }
+    }
+
     protected JMXConnector getJmxConnector(String pid) throws AttachNotSupportedException, IOException, AgentLoadException, AgentInitializationException {
         VirtualMachine vm = VirtualMachine.attach(pid);
         String connectorAddress;
@@ -98,7 +130,8 @@ public class MbeansApi {
 
         for (String key : compositeData.getCompositeType().keySet()) {
             Object value = compositeData.get(key);
-            if (CompositeData.class.isAssignableFrom(value.getClass())) {
+
+            if (value != null && CompositeData.class.isAssignableFrom(value.getClass())) {
                 value = toMap((CompositeData) value);
             }
 
@@ -116,5 +149,137 @@ public class MbeansApi {
         }
 
         return list;
+    }
+
+    protected Map<Object, String> toArgs(String opertionName, String[] values, MBeanInfo mBeanInfo) {
+        MBeanOperationInfo target = null;
+        MBeanOperationInfo namedTarget = null;
+
+        OUT:
+        for (MBeanOperationInfo operationInfo : mBeanInfo.getOperations()) {
+            if (!operationInfo.getName().equals(opertionName)) {
+                continue;
+            }
+            namedTarget = operationInfo;
+
+            MBeanParameterInfo[] signature = operationInfo.getSignature();
+            if (signature.length != values.length) {
+                continue;
+            }
+
+            for (int i = 0; i < signature.length; i++) {
+                if (signature[i].getType().startsWith("[") && !values[i].contains(",")) {
+                    continue OUT;
+                }
+
+                if (!signature[i].getType().startsWith("[") && values[i].contains(",")) {
+                    continue OUT;
+                }
+            }
+
+            target = operationInfo;
+            break;
+        }
+
+        if (namedTarget == null) {
+            throw new IllegalArgumentException("Target operation not found.");
+        }
+
+        if (target == null) {
+            throw new IllegalArgumentException("Argument size or type is not expected.");
+        }
+
+        MBeanParameterInfo[] signature = target.getSignature();
+
+        Map<Object, String> args = new LinkedHashMap<Object, String>(signature.length);
+        for (int i = 0; i < signature.length; i++) {
+            Object converted = converType(values[i], signature[i].getType());
+            args.put(converted, signature[i].getType());
+        }
+
+        return args;
+    }
+
+    protected Object converType(String value, String type) {
+        if (type.equals("java.lang.String")) {
+            return value;
+        } else if (type.equals("boolean")) {
+            return Boolean.valueOf(value);
+        } else if (type.equals("byte")) {
+            return Byte.valueOf(value);
+        } else if (type.equals("char")) {
+            return value.toCharArray()[0];
+        } else if (type.equals("double")) {
+            return Double.valueOf(value);
+        } else if (type.equals("float")) {
+            return Float.valueOf(value);
+        } else if (type.equals("int")) {
+            return Integer.valueOf(value);
+        } else if (type.equals("long")) {
+            return Long.valueOf(value);
+        } else if (type.equals("short")) {
+            return Short.valueOf(value);
+        } else if (type.startsWith("[")) {
+            String[] values = value.split(",");
+            return convertArray(values, type.substring(1));
+        }
+
+        throw new IllegalArgumentException("Unknown Type : " + type);
+    }
+
+    protected Object convertArray(String[] values, String type) {
+        if (type.equals("Ljava.lang.String")) {
+            return values;
+        } else if (type.equals("Z")) {
+            boolean[] returnValues = new boolean[values.length];
+            for (int i = 0; i < returnValues.length; i++) {
+                returnValues[i] = Boolean.parseBoolean(values[i]);
+            }
+            return returnValues;
+        } else if (type.equals("B")) {
+            byte[] returnValues = new byte[values.length];
+            for (int i = 0; i < returnValues.length; i++) {
+                returnValues[i] = Byte.parseByte(values[i]);
+            }
+            return returnValues;
+        } else if (type.equals("C")) {
+            char[] returnValues = new char[values.length];
+            for (int i = 0; i < returnValues.length; i++) {
+                returnValues[i] = values[i].toCharArray()[0];
+            }
+            return returnValues;
+        } else if (type.equals("D")) {
+            double[] returnValues = new double[values.length];
+            for (int i = 0; i < returnValues.length; i++) {
+                returnValues[i] = Double.parseDouble(values[i]);
+            }
+            return returnValues;
+        } else if (type.equals("F")) {
+            float[] returnValues = new float[values.length];
+            for (int i = 0; i < returnValues.length; i++) {
+                returnValues[i] = Float.parseFloat(values[i]);
+            }
+            return returnValues;
+        } else if (type.equals("I")) {
+            int[] returnValues = new int[values.length];
+            for (int i = 0; i < returnValues.length; i++) {
+                returnValues[i] = Integer.parseInt(values[i]);
+            }
+            return returnValues;
+        } else if (type.equals("J")) {
+            long[] returnValues = new long[values.length];
+            for (int i = 0; i < returnValues.length; i++) {
+                returnValues[i] = Long.parseLong(values[i]);
+            }
+            return returnValues;
+        } else if (type.equals("S")) {
+            short[] returnValues = new short[values.length];
+            for (int i = 0; i < returnValues.length; i++) {
+                returnValues[i] = Short.parseShort(values[i]);
+            }
+            return returnValues;
+        }
+
+        throw new IllegalArgumentException("Unknown Type : " + type);
     }
 }
