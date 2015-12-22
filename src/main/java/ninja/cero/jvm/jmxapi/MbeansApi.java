@@ -1,9 +1,6 @@
 package ninja.cero.jvm.jmxapi;
 
-import com.sun.tools.attach.AgentInitializationException;
-import com.sun.tools.attach.AgentLoadException;
-import com.sun.tools.attach.AttachNotSupportedException;
-import com.sun.tools.attach.VirtualMachine;
+import com.sun.tools.attach.*;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,7 +17,63 @@ import java.util.*;
 
 @RestController
 public class MbeansApi {
-    @RequestMapping("/mbeans/{pid}")
+    @RequestMapping("/")
+    public List<Jps> jps() {
+        List<Jps> jpsList = new ArrayList<Jps>();
+
+        List<VirtualMachineDescriptor> vmList = VirtualMachine.list();
+        for (VirtualMachineDescriptor vm : vmList) {
+            Jps jps = new Jps();
+            jps.name = vm.displayName();
+            jps.pid = vm.id();
+            jps.simpleName = toSimpleName(jps.name);
+            jpsList.add(jps);
+        }
+
+        return jpsList;
+    }
+
+    protected String toSimpleName(String name) {
+        String[] values = name.split(" ");
+        if (values.length == 0) {
+            return "";
+        }
+
+        values = values[0].split("\\.");
+        if (values.length == 0) {
+            return "";
+        }
+
+        return values[values.length - 1];
+    }
+
+    static class Jps {
+        public String pid;
+        public String name;
+        public String simpleName;
+    }
+
+    @RequestMapping("/{pid}/info")
+    public Jinfo jinfo(@PathVariable String pid) throws IOException, AttachNotSupportedException {
+        VirtualMachine vm = VirtualMachine.attach(pid);
+
+        Jinfo jinfo = new Jinfo();
+        try {
+            jinfo.systemProperties = vm.getSystemProperties();
+            jinfo.agentProperties = vm.getAgentProperties();
+        } finally {
+            vm.detach();
+        }
+
+        return jinfo;
+    }
+
+    static class Jinfo {
+        public Map<Object, Object> systemProperties;
+        public Map<Object, Object> agentProperties;
+    }
+
+    @RequestMapping("/{pid}")
     public Set<ObjectName> mbeans(@PathVariable String pid) throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException {
         JMXConnector connector = getJmxConnector(pid);
 
@@ -33,7 +86,7 @@ public class MbeansApi {
         }
     }
 
-    @RequestMapping("/mbeans/{pid}/{name:.+}")
+    @RequestMapping("/{pid}/{name:.+}")
     public MBeanInfo mbeansInfo(@PathVariable String pid, @PathVariable String name)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
         JMXConnector connector = getJmxConnector(pid);
@@ -46,7 +99,7 @@ public class MbeansApi {
         }
     }
 
-    @RequestMapping("/mbeans/{pid}/{name:.+}/attribute/{attributes}")
+    @RequestMapping("/{pid}/{name:.+}/attribute/{attributes}")
     public Map<String, Object> mbeansAttribute(@PathVariable String pid, @PathVariable String name, @PathVariable String[] attributes)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
         Map<String, Object> map = new LinkedHashMap<String, Object>();
@@ -76,7 +129,7 @@ public class MbeansApi {
     }
 
 
-    @RequestMapping("/mbeans/{pid}/{name:.+}/operation/{operation}")
+    @RequestMapping("/{pid}/{name:.+}/operation/{operation}")
     public Object mbeansInvoke(@PathVariable String pid, @PathVariable String name, @PathVariable String operation, @RequestParam Map<String, String> params)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException, MBeanException {
         JMXConnector connector = getJmxConnector(pid);
