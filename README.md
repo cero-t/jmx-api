@@ -1,5 +1,5 @@
 # jmx-api
-RESTful API for JMX
+RESTful APIs for JMX. APIs are as follows.
 
 ## /
 Get working java process ids like `jps` command.

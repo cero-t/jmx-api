@@ -243,6 +243,10 @@ public class JmxUtil {
     }
 
     protected Map<String, Object> toMap(CompositeData compositeData) {
+        if (compositeData == null) {
+            return null;
+        }
+
         Map<String, Object> map = new LinkedHashMap<String, Object>();
 
         for (String key : compositeData.getCompositeType().keySet()) {

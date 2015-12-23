@@ -1,10 +1,14 @@
 package ninja.cero.jvm.jmxapi;
 
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.sun.tools.attach.AgentInitializationException;
 import com.sun.tools.attach.AgentLoadException;
 import com.sun.tools.attach.AttachNotSupportedException;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -21,10 +25,17 @@ import java.util.Map;
 import java.util.Set;
 
 @SpringBootApplication
+@Configuration
 @RestController
 public class MbeansApi {
     public static void main(String[] args) {
         SpringApplication.run(MbeansApi.class, args);
+    }
+
+    @Bean
+    public Jackson2ObjectMapperBuilder mapperBuilder() {
+        return Jackson2ObjectMapperBuilder.json()
+                .indentOutput(true);
     }
 
     JmxUtil jmxUtil = new JmxUtil();
