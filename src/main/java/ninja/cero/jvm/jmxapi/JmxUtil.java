@@ -7,6 +7,7 @@ import com.sun.tools.attach.VirtualMachine;
 import com.sun.tools.attach.VirtualMachineDescriptor;
 
 import javax.management.Attribute;
+import javax.management.AttributeList;
 import javax.management.InstanceNotFoundException;
 import javax.management.IntrospectionException;
 import javax.management.MBeanAttributeInfo;
@@ -27,6 +28,7 @@ import javax.management.remote.JMXServiceURL;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -156,13 +158,27 @@ public class JmxUtil {
         return result;
     }
 
-    public Map<String, Object> mbeansAttribute(String pid, String name, String[] attributes)
-            throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
-        Map<String, Object> map = new LinkedHashMap<String, Object>();
+    public Object mbeansAttributeOrInvoke(String pid, String name, String[] keys, Map<String, String> params) throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, ReflectionException, InstanceNotFoundException, IntrospectionException, MBeanException {
         JMXConnector connector = getJmxConnector(pid);
         MBeanServerConnection connection = connector.getMBeanServerConnection();
+        ObjectName objectName = new ObjectName(name);
 
-        for (Object o : connection.getAttributes(new ObjectName(name), attributes)) {
+        AttributeList attributes = connection.getAttributes(objectName, keys);
+        if (attributes.isEmpty()) {
+            if (keys.length == 1) {
+                return mbeansInvoke(connection, objectName, keys[0], params);
+            } else {
+                throw new IllegalArgumentException("Attributes not found or operation number is more than one : " + Arrays.toString(keys));
+            }
+        } else {
+            return mbeansAttribute(attributes);
+        }
+    }
+
+    protected Map<String, Object> mbeansAttribute(AttributeList attributes)
+            throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
+        Map<String, Object> map = new LinkedHashMap<String, Object>();
+        for (Object o : attributes) {
             if (Attribute.class.isAssignableFrom(o.getClass())) {
                 Attribute attribute = (Attribute) o;
                 Object value = attribute.getValue();
@@ -180,12 +196,8 @@ public class JmxUtil {
         return map;
     }
 
-    public Object mbeansInvoke(String pid, String name, String operation, Map<String, String> params)
+    protected Object mbeansInvoke(MBeanServerConnection connection, ObjectName objectName, String operation, Map<String, String> params)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException, MBeanException {
-        JMXConnector connector = getJmxConnector(pid);
-        MBeanServerConnection connection = connector.getMBeanServerConnection();
-
-        ObjectName objectName = new ObjectName(name);
         MBeanInfo mBeanInfo = connection.getMBeanInfo(objectName);
         Collection<String> values = params.values();
         Map<Object, String> map = toArgs(operation, values.toArray(new String[values.size()]), mBeanInfo);
@@ -327,7 +339,7 @@ public class JmxUtil {
         }
 
         if (namedTarget == null) {
-            throw new IllegalArgumentException("Target operation not found.");
+            throw new IllegalArgumentException("Target attribute or operation not found.");
         }
 
         if (target == null) {

@@ -62,23 +62,17 @@ public class MbeansApi implements ApplicationListener<ContextClosedEvent> {
         return jmxUtil.mbeansInfo(pid, name);
     }
 
-    @RequestMapping("/{pid}/{name:.+}/attributes/{attributes}")
-    public Map<String, Object> mbeansAttributes(@PathVariable String pid, @PathVariable String name, @PathVariable String[] attributes)
-            throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
-        return jmxUtil.mbeansAttribute(pid, name, attributes);
-    }
-
-    @RequestMapping("/{pid}/{name:.+}/attribute/{attributes}")
-    public Map<String, Object> mbeansAttribute(@PathVariable String pid, @PathVariable String name, @PathVariable String[] attributes)
-            throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
-        return jmxUtil.mbeansAttribute(pid, name, attributes);
-    }
-
-    @RequestMapping("/{pid}/{name:.+}/operation/{operation}")
-    public Object mbeansInvoke(@PathVariable String pid, @PathVariable String name, @PathVariable String operation, @RequestParam Map<String, String> params)
+    @RequestMapping("/{pid}/{name:.+}/{keys}")
+    public Object mbeansAttribute(@PathVariable String pid, @PathVariable String name, @PathVariable String keys[], @RequestParam Map<String, String> params)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException, MBeanException {
-        return jmxUtil.mbeansInvoke(pid, name, operation, params);
+        return jmxUtil.mbeansAttributeOrInvoke(pid, name, keys, params);
     }
+
+//    @RequestMapping("/{pid}/{name:.+}/operation/{operation}")
+//    public Object mbeansInvoke(@PathVariable String pid, @PathVariable String name, @PathVariable String operation, @RequestParam Map<String, String> params)
+//            throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException, MBeanException {
+//        return jmxUtil.mbeansInvoke(pid, name, operation, params);
+//    }
 
     @Override
     public void onApplicationEvent(ContextClosedEvent contextClosedEvent) {

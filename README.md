@@ -160,7 +160,7 @@ Get the list of mbean info and attributes, operations, constructors and notifica
 }
 ```
 
-## /{pid}/{mbean}/attribute/{attributes}
+## /{pid}/{mbean}/{attributes}
 
 Get one ore more mbean attributes of the target java process.
 
@@ -186,12 +186,19 @@ Get one ore more mbean attributes of the target java process.
 }
 ```
 
-## /{pid}/{mbean}/attributes/{attributes}
+## /{pid}/{mbean}/{attribute}?{argument}
 
-An alias of `/{pid}/{mbean}/attribute/{attributes}`.
+Set the value to the mbean attribute of the target java process.
 
+### URL example
+`TBD`
 
-## /{pid}/{mbean}/operation/{operation}?{arguments}
+### Response example
+```
+TBD
+```
+
+## /{pid}/{mbean}/{operation}?{arguments}
 
 Execute the mbean operation of the target java process.
 
