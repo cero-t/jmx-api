@@ -33,8 +33,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class JmxUtil {
+    static Map<String, VirtualMachine> vmCache = new ConcurrentHashMap<String, VirtualMachine>();
+    static Map<String, JMXConnector> connectorChache = new ConcurrentHashMap<String, JMXConnector>();
+
+
     public List<Jps> jps() {
         List<Jps> jpsList = new ArrayList<Jps>();
 
@@ -71,15 +76,11 @@ public class JmxUtil {
     }
 
     public Jinfo jinfo(String pid) throws IOException, AttachNotSupportedException {
-        VirtualMachine vm = VirtualMachine.attach(pid);
+        VirtualMachine vm = getVirutualMachine(pid);
 
         Jinfo jinfo = new Jinfo();
-        try {
-            jinfo.systemProperties = vm.getSystemProperties();
-            jinfo.agentProperties = vm.getAgentProperties();
-        } finally {
-            vm.detach();
-        }
+        jinfo.systemProperties = vm.getSystemProperties();
+        jinfo.agentProperties = vm.getAgentProperties();
 
         return jinfo;
     }
@@ -91,18 +92,12 @@ public class JmxUtil {
 
     public Set<String> mbeans(String pid) throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException {
         JMXConnector connector = getJmxConnector(pid);
+        MBeanServerConnection connection = connector.getMBeanServerConnection();
 
-        Set<String> set;
-        try {
-            MBeanServerConnection connection = connector.getMBeanServerConnection();
-            Set<ObjectName> names = connection.queryNames(null, null);
-
-            set = new TreeSet<String>();
-            for (ObjectName name : names) {
-                set.add(name.getCanonicalName());
-            }
-        } finally {
-            connector.close();
+        Set<String> set = new TreeSet<String>();
+        Set<ObjectName> names = connection.queryNames(null, null);
+        for (ObjectName name : names) {
+            set.add(name.getCanonicalName());
         }
 
         return set;
@@ -111,84 +106,75 @@ public class JmxUtil {
     public Map<String, Object> mbeansInfo(String pid, String name)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
         JMXConnector connector = getJmxConnector(pid);
+        MBeanServerConnection connection = connector.getMBeanServerConnection();
 
-        try {
-            MBeanServerConnection connection = connector.getMBeanServerConnection();
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        MBeanInfo mBeanInfo = connection.getMBeanInfo(new ObjectName(name));
 
-            Map<String, Object> result = new LinkedHashMap<String, Object>();
-            MBeanInfo mBeanInfo = connection.getMBeanInfo(new ObjectName(name));
+        result.put("description", mBeanInfo.getDescription());
+        result.put("interfaceClassName", mBeanInfo.getDescriptor().getFieldValue("interfaceClassName"));
 
-            result.put("description", mBeanInfo.getDescription());
-            result.put("interfaceClassName", mBeanInfo.getDescriptor().getFieldValue("interfaceClassName"));
-
-            List<Map<String, Object>> attributes = new ArrayList<Map<String, Object>>();
-            for (MBeanAttributeInfo attribute : mBeanInfo.getAttributes()) {
-                Map<String, Object> attributeMap = new LinkedHashMap<String, Object>();
-                attributeMap.put("name", attribute.getName());
-                attributeMap.put("type", convertArgType(attribute.getType()));
-                attributeMap.put("readable", attribute.isReadable());
-                attributeMap.put("writable", attribute.isWritable());
-                attributes.add(attributeMap);
-            }
-            result.put("attributes", attributes);
-
-            List<Map<String, Object>> operations = new ArrayList<Map<String, Object>>();
-            for (MBeanOperationInfo operation : mBeanInfo.getOperations()) {
-                Map<String, Object> operationMap = new LinkedHashMap<String, Object>();
-                operationMap.put("name", operation.getName());
-
-                List<String> argType = new ArrayList<String>();
-                for (MBeanParameterInfo parameterInfo : operation.getSignature()) {
-                    argType.add(convertArgType(parameterInfo.getType()));
-                }
-                operationMap.put("argTypes", argType);
-                operationMap.put("returnType", convertArgType(operation.getReturnType()));
-
-                operations.add(operationMap);
-            }
-            result.put("operations", operations);
-
-            List<String> constructors = new ArrayList<String>();
-            for (MBeanConstructorInfo constructor : mBeanInfo.getConstructors()) {
-                constructors.add(constructor.getName());
-            }
-            result.put("constructors", constructors);
-
-            List<String> notifications = new ArrayList<String>();
-            for (MBeanNotificationInfo notification : mBeanInfo.getNotifications()) {
-                notifications.add(notification.getName());
-            }
-            result.put("notifications", notifications);
-
-            return result;
-        } finally {
-            connector.close();
+        List<Map<String, Object>> attributes = new ArrayList<Map<String, Object>>();
+        for (MBeanAttributeInfo attribute : mBeanInfo.getAttributes()) {
+            Map<String, Object> attributeMap = new LinkedHashMap<String, Object>();
+            attributeMap.put("name", attribute.getName());
+            attributeMap.put("type", convertArgType(attribute.getType()));
+            attributeMap.put("readable", attribute.isReadable());
+            attributeMap.put("writable", attribute.isWritable());
+            attributes.add(attributeMap);
         }
+        result.put("attributes", attributes);
+
+        List<Map<String, Object>> operations = new ArrayList<Map<String, Object>>();
+        for (MBeanOperationInfo operation : mBeanInfo.getOperations()) {
+            Map<String, Object> operationMap = new LinkedHashMap<String, Object>();
+            operationMap.put("name", operation.getName());
+
+            List<String> argType = new ArrayList<String>();
+            for (MBeanParameterInfo parameterInfo : operation.getSignature()) {
+                argType.add(convertArgType(parameterInfo.getType()));
+            }
+            operationMap.put("argTypes", argType);
+            operationMap.put("returnType", convertArgType(operation.getReturnType()));
+
+            operations.add(operationMap);
+        }
+        result.put("operations", operations);
+
+        List<String> constructors = new ArrayList<String>();
+        for (MBeanConstructorInfo constructor : mBeanInfo.getConstructors()) {
+            constructors.add(constructor.getName());
+        }
+        result.put("constructors", constructors);
+
+        List<String> notifications = new ArrayList<String>();
+        for (MBeanNotificationInfo notification : mBeanInfo.getNotifications()) {
+            notifications.add(notification.getName());
+        }
+        result.put("notifications", notifications);
+
+        return result;
     }
 
     public Map<String, Object> mbeansAttribute(String pid, String name, String[] attributes)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
         Map<String, Object> map = new LinkedHashMap<String, Object>();
         JMXConnector connector = getJmxConnector(pid);
+        MBeanServerConnection connection = connector.getMBeanServerConnection();
 
-        try {
-            MBeanServerConnection connection = connector.getMBeanServerConnection();
-            for (Object o : connection.getAttributes(new ObjectName(name), attributes)) {
-                if (Attribute.class.isAssignableFrom(o.getClass())) {
-                    Attribute attribute = (Attribute) o;
-                    Object value = attribute.getValue();
+        for (Object o : connection.getAttributes(new ObjectName(name), attributes)) {
+            if (Attribute.class.isAssignableFrom(o.getClass())) {
+                Attribute attribute = (Attribute) o;
+                Object value = attribute.getValue();
 
-                    if (CompositeData.class.isAssignableFrom(value.getClass())) {
-                        map.put(attribute.getName(), toMap((CompositeData) value));
-                    } else if (CompositeData[].class.isAssignableFrom(value.getClass())) {
-                        map.put(attribute.getName(), toList((CompositeData[]) value));
-                    } else {
-                        map.put(attribute.getName(), value);
-                    }
+                if (CompositeData.class.isAssignableFrom(value.getClass())) {
+                    map.put(attribute.getName(), toMap((CompositeData) value));
+                } else if (CompositeData[].class.isAssignableFrom(value.getClass())) {
+                    map.put(attribute.getName(), toList((CompositeData[]) value));
+                } else {
+                    map.put(attribute.getName(), value);
                 }
             }
-        } finally {
-            connector.close();
         }
 
         return map;
@@ -197,49 +183,87 @@ public class JmxUtil {
     public Object mbeansInvoke(String pid, String name, String operation, Map<String, String> params)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException, MBeanException {
         JMXConnector connector = getJmxConnector(pid);
+        MBeanServerConnection connection = connector.getMBeanServerConnection();
 
-        try {
-            MBeanServerConnection connection = connector.getMBeanServerConnection();
+        ObjectName objectName = new ObjectName(name);
+        MBeanInfo mBeanInfo = connection.getMBeanInfo(objectName);
+        Collection<String> values = params.values();
+        Map<Object, String> map = toArgs(operation, values.toArray(new String[values.size()]), mBeanInfo);
 
-            ObjectName objectName = new ObjectName(name);
-            MBeanInfo mBeanInfo = connection.getMBeanInfo(objectName);
-            Collection<String> values = params.values();
-            Map<Object, String> map = toArgs(operation, values.toArray(new String[values.size()]), mBeanInfo);
+        Set<Object> args = map.keySet();
+        Collection<String> signatures = map.values();
 
-            Set<Object> args = map.keySet();
-            Collection<String> signatures = map.values();
-
-            Object result = connection.invoke(objectName, operation, args.toArray(new Object[args.size()]), signatures.toArray(new String[signatures.size()]));
-            if (CompositeData.class.isAssignableFrom(result.getClass())) {
-                return toMap((CompositeData) result);
-            } else if (CompositeData[].class.isAssignableFrom(result.getClass())) {
-                return toList((CompositeData[]) result);
-            } else {
-                return result;
-            }
-
-        } finally {
-            connector.close();
+        Object result = connection.invoke(objectName, operation, args.toArray(new Object[args.size()]), signatures.toArray(new String[signatures.size()]));
+        if (CompositeData.class.isAssignableFrom(result.getClass())) {
+            return toMap((CompositeData) result);
+        } else if (CompositeData[].class.isAssignableFrom(result.getClass())) {
+            return toList((CompositeData[]) result);
+        } else {
+            return result;
         }
     }
 
-    protected JMXConnector getJmxConnector(String pid) throws AttachNotSupportedException, IOException, AgentLoadException, AgentInitializationException {
-        VirtualMachine vm = VirtualMachine.attach(pid);
-        String connectorAddress;
-        try {
-            connectorAddress = vm.getAgentProperties().getProperty("com.sun.management.jmxremote.localConnectorAddress");
+    public synchronized void close() {
+        for (VirtualMachine vm : vmCache.values()) {
+            try {
+                vm.detach();
+            } catch (IOException e) {
+                // continue to detach
+                e.printStackTrace();
+            }
+        }
 
+        for (JMXConnector connector : connectorChache.values()) {
+            try {
+                connector.close();
+            } catch (IOException e) {
+                // continue to close
+                e.printStackTrace();
+            }
+        }
+    }
+
+    protected VirtualMachine getVirutualMachine(String pid) throws IOException, AttachNotSupportedException {
+        synchronized (pid.intern()) {
+            VirtualMachine vm = vmCache.get(pid);
+            if (vm == null) {
+                vm = VirtualMachine.attach(pid);
+                vmCache.put(pid, vm);
+            }
+            return vm;
+        }
+    }
+
+    protected synchronized JMXConnector getJmxConnector(String pid) throws AttachNotSupportedException, IOException, AgentLoadException, AgentInitializationException {
+        synchronized (pid.intern()) {
+            JMXConnector connector = connectorChache.get(pid);
+            if (connector != null) {
+                try {
+                    connector.getConnectionId();
+                    return connector;
+                } catch (IOException e) {
+                    // VM is stopped or connector is decayed
+                    vmCache.remove(pid);
+                    connectorChache.remove(pid);
+                }
+            }
+
+            VirtualMachine vm = getVirutualMachine(pid);
+
+            String connectorAddress = vm.getAgentProperties().getProperty("com.sun.management.jmxremote.localConnectorAddress");
             if (connectorAddress == null) {
                 String agent = vm.getSystemProperties().getProperty("java.home") + File.separator + "lib" + File.separator + "management-agent.jar";
                 vm.loadAgent(agent);
                 connectorAddress = vm.getAgentProperties().getProperty("com.sun.management.jmxremote.localConnectorAddress");
             }
-        } finally {
-            vm.detach();
-        }
 
-        JMXServiceURL serviceURL = new JMXServiceURL(connectorAddress);
-        return JMXConnectorFactory.connect(serviceURL);
+            JMXServiceURL serviceURL = new JMXServiceURL(connectorAddress);
+            connector = JMXConnectorFactory.connect(serviceURL);
+
+            connectorChache.put(pid, connector);
+
+            return connector;
+        }
     }
 
     protected Map<String, Object> toMap(CompositeData compositeData) {

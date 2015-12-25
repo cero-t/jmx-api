@@ -1,13 +1,14 @@
 package ninja.cero.jvm.jmxapi;
 
-import com.fasterxml.jackson.core.JsonGenerator;
 import com.sun.tools.attach.AgentInitializationException;
 import com.sun.tools.attach.AgentLoadException;
 import com.sun.tools.attach.AttachNotSupportedException;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,7 +28,7 @@ import java.util.Set;
 @SpringBootApplication
 @Configuration
 @RestController
-public class MbeansApi {
+public class MbeansApi implements ApplicationListener<ContextClosedEvent> {
     public static void main(String[] args) {
         SpringApplication.run(MbeansApi.class, args);
     }
@@ -77,5 +78,10 @@ public class MbeansApi {
     public Object mbeansInvoke(@PathVariable String pid, @PathVariable String name, @PathVariable String operation, @RequestParam Map<String, String> params)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException, MBeanException {
         return jmxUtil.mbeansInvoke(pid, name, operation, params);
+    }
+
+    @Override
+    public void onApplicationEvent(ContextClosedEvent contextClosedEvent) {
+        jmxUtil.close();
     }
 }
