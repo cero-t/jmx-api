@@ -57,22 +57,20 @@ public class MbeansApi implements ApplicationListener<ContextClosedEvent> {
     }
 
     @RequestMapping("/{pid}/{name:.+}")
-    public Map<String, Object> mbeansInfo(@PathVariable String pid, @PathVariable String name)
+    public Map<String, Object> mbeansInfoOrWriteAttribute(@PathVariable String pid, @PathVariable String name, @RequestParam Map<String, String> params)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
-        return jmxUtil.mbeansInfo(pid, name);
+        if (params.isEmpty()) {
+            return jmxUtil.mbeansInfo(pid, name);
+        } else {
+            return jmxUtil.mbeansWriteAttribute(pid, name, params);
+        }
     }
 
     @RequestMapping("/{pid}/{name:.+}/{keys}")
-    public Object mbeansAttribute(@PathVariable String pid, @PathVariable String name, @PathVariable String keys[], @RequestParam Map<String, String> params)
+    public Object mbeansAttributeOrInvoke(@PathVariable String pid, @PathVariable String name, @PathVariable String keys[], @RequestParam Map<String, String> params)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException, MBeanException {
         return jmxUtil.mbeansAttributeOrInvoke(pid, name, keys, params);
     }
-
-//    @RequestMapping("/{pid}/{name:.+}/operation/{operation}")
-//    public Object mbeansInvoke(@PathVariable String pid, @PathVariable String name, @PathVariable String operation, @RequestParam Map<String, String> params)
-//            throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException, MBeanException {
-//        return jmxUtil.mbeansInvoke(pid, name, operation, params);
-//    }
 
     @Override
     public void onApplicationEvent(ContextClosedEvent contextClosedEvent) {

@@ -186,16 +186,19 @@ Get one ore more mbean attributes of the target java process.
 }
 ```
 
-## /{pid}/{mbean}/{attribute}?{argument}
+## /{pid}/{mbean}?{attributes}
 
-Set the value to the mbean attribute of the target java process.
+Set values to the mbean attributes of the target java process.
 
 ### URL example
-`TBD`
+`http://localhost:8080/12345/java.lang:type=Threading?ThreadContentionMonitoringEnabled=true&ThreadCpuTimeEnabled=false`
 
 ### Response example
-```
-TBD
+```json
+{
+   "ThreadContentionMonitoringEnabled" : true,
+   "ThreadCpuTimeEnabled" : false
+}
 ```
 
 ## /{pid}/{mbean}/{operation}?{arguments}

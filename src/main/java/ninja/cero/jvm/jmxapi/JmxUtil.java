@@ -120,7 +120,7 @@ public class JmxUtil {
         for (MBeanAttributeInfo attribute : mBeanInfo.getAttributes()) {
             Map<String, Object> attributeMap = new LinkedHashMap<String, Object>();
             attributeMap.put("name", attribute.getName());
-            attributeMap.put("type", convertArgType(attribute.getType()));
+            attributeMap.put("type", toReadableType(attribute.getType()));
             attributeMap.put("readable", attribute.isReadable());
             attributeMap.put("writable", attribute.isWritable());
             attributes.add(attributeMap);
@@ -134,10 +134,10 @@ public class JmxUtil {
 
             List<String> argType = new ArrayList<String>();
             for (MBeanParameterInfo parameterInfo : operation.getSignature()) {
-                argType.add(convertArgType(parameterInfo.getType()));
+                argType.add(toReadableType(parameterInfo.getType()));
             }
             operationMap.put("argTypes", argType);
-            operationMap.put("returnType", convertArgType(operation.getReturnType()));
+            operationMap.put("returnType", toReadableType(operation.getReturnType()));
 
             operations.add(operationMap);
         }
@@ -158,6 +158,27 @@ public class JmxUtil {
         return result;
     }
 
+    protected Map<String, Object> mbeansWriteAttribute(String pid, String name, Map<String, String> params)
+            throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
+        JMXConnector connector = getJmxConnector(pid);
+        MBeanServerConnection connection = connector.getMBeanServerConnection();
+        ObjectName objectName = new ObjectName(name);
+
+        MBeanInfo mBeanInfo = connection.getMBeanInfo(objectName);
+        MBeanAttributeInfo[] attributeInfos = mBeanInfo.getAttributes();
+
+        AttributeList updateAttributes = new AttributeList();
+        for (MBeanAttributeInfo attributeInfo : attributeInfos) {
+            if (params.containsKey(attributeInfo.getName())) {
+                Object value = converType(params.get(attributeInfo.getName()), attributeInfo.getType());
+                updateAttributes.add(new Attribute(attributeInfo.getName(), value));
+            }
+        }
+
+        AttributeList attributes = connection.setAttributes(new ObjectName(name), updateAttributes);
+        return attribtesToMap(attributes);
+    }
+
     public Object mbeansAttributeOrInvoke(String pid, String name, String[] keys, Map<String, String> params) throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, ReflectionException, InstanceNotFoundException, IntrospectionException, MBeanException {
         JMXConnector connector = getJmxConnector(pid);
         MBeanServerConnection connection = connector.getMBeanServerConnection();
@@ -171,11 +192,11 @@ public class JmxUtil {
                 throw new IllegalArgumentException("Attributes not found or operation number is more than one : " + Arrays.toString(keys));
             }
         } else {
-            return mbeansAttribute(attributes);
+            return attribtesToMap(attributes);
         }
     }
 
-    protected Map<String, Object> mbeansAttribute(AttributeList attributes)
+    protected Map<String, Object> attribtesToMap(AttributeList attributes)
             throws IOException, AttachNotSupportedException, AgentLoadException, AgentInitializationException, MalformedObjectNameException, IntrospectionException, InstanceNotFoundException, ReflectionException {
         Map<String, Object> map = new LinkedHashMap<String, Object>();
         for (Object o : attributes) {
@@ -246,7 +267,7 @@ public class JmxUtil {
         }
     }
 
-    protected synchronized JMXConnector getJmxConnector(String pid) throws AttachNotSupportedException, IOException, AgentLoadException, AgentInitializationException {
+    protected JMXConnector getJmxConnector(String pid) throws AttachNotSupportedException, IOException, AgentLoadException, AgentInitializationException {
         synchronized (pid.intern()) {
             JMXConnector connector = connectorChache.get(pid);
             if (connector != null) {
@@ -440,7 +461,7 @@ public class JmxUtil {
         throw new IllegalArgumentException("Unknown Type : " + type);
     }
 
-    protected String convertArgType(String type) {
+    protected String toReadableType(String type) {
         if (!type.startsWith("[")) {
             return type;
         } else if (type.startsWith("[L")) {
